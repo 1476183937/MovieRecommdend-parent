@@ -8,6 +8,7 @@ import org.apache.spark.ml.linalg.SparseVector
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.storage.StorageLevel
 import org.jblas.DoubleMatrix
 
 /**
@@ -20,8 +21,17 @@ object ContentRecommender {
   def main(args: Array[String]): Unit = {
 
     val sparkConf: SparkConf = new SparkConf().setAppName("").setMaster("local[*]")
-//      .set("spark.default.parallelism", "10")
+      .set("spark.default.parallelism", "50")
+      .set("spark.network.timeout", "300")
+      .set("spark.rpc.askTimeout", "300")
+      .set("num-executors", "2")
+      .set("executor-cores", "2")
 //      .set("spark.sql.shuffle.partitions", "20")
+    //spark.network.timeout:由网络或者gc引起,worker或executor没有接收到executor或task的心跳反馈
+    //spark.rpc.askTimeout or spark.rpc.lookupTimeout 单位 s
+    //spark.scheduler.executorTaskBlacklistTime 30000:设置黑名单，时间为30s
+    //spark.storage.memoryFraction － 分配给rdd缓存的比例，默认为0.6(60%)
+    //spark.shuffle.memoryFraction - 分配给shuffle数据的内存比例，默认为0.2(20%)
 
 
     val spark: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
@@ -34,7 +44,9 @@ object ContentRecommender {
     val movieInfoDF: DataFrame = spark.read.format("jdbc")
       .option("driver", "com.mysql.jdbc.Driver")
       .option("url", Constant.URL_DB)
-      .option("dbtable", Constant.MOVIE_INFO_DB)
+//      .option("dbtable", Constant.MOVIE_INFO_DB)
+//      .option("dbtable", "m_movie_info2")
+      .option("dbtable", "m_movie_info2")
       .option("user", Constant.USER_DB)
       .option("password", Constant.PASSWORD_DB)
       .load()
@@ -61,7 +73,8 @@ object ContentRecommender {
             )
       })
       .toDF("mid", "movie_name", "directors", "main_actors", "categories", "img_urls", "language", "location","rating_num")
-      .cache()
+//      .cache()
+//      .persist(StorageLevel.MEMORY_AND_DISK)
 
     //转换成map
     val movieInfoMap: collection.Map[Long, Row] = movieInfoDF.rdd.map(info => {
@@ -70,7 +83,6 @@ object ContentRecommender {
 
 
     //对电影信息进行转换，得到：(mid,可以表示电影特征的单词字符串)
-
     val mid2MultipleWordsDF: DataFrame = movieInfoDF.map(info => {
       (info.getAs[Long]("mid"),
         info.getAs[String]("directors")+","+
@@ -81,7 +93,6 @@ object ContentRecommender {
       )
     }).toDF("mid", "multipleWords")
       .cache()
-
 
     //定义分词器，对multipleWords进行分词
     val tokenizer: Tokenizer = new Tokenizer().setInputCol("multipleWords").setOutputCol("words")
@@ -114,7 +125,10 @@ object ContentRecommender {
     }).rdd.map {
       //转换成DoubleMatrix
       case (mid, features) => (mid, new DoubleMatrix(features))
-    }.cache()
+    }
+//      .repartition(200)
+//      .persist(StorageLevel.MEMORY_AND_DISK)
+//      .cache()
 
     val date: String = DateUtil.getCurrentTime("yyyy-MM-dd")
 
@@ -135,9 +149,13 @@ object ContentRecommender {
           //转换成kv形式
           (m1._1, (m2._1, score))
         }
-      }.cache()
+      }
+      .repartition(200)
+//      .persist(StorageLevel.MEMORY_AND_DISK)
+//      .cache()
 
-    val mid2SimilarScoreDF: DataFrame = mid2SimilarMovies.groupByKey().map {
+
+    val mid2SimilarScoreDF: DataFrame = mid2SimilarMovies.groupByKey().repartition(200).map {
       case (mid, items) => {
         Mid2SimilarScore(date, mid, items.toList.map(x => Mid2Score(x._1, x._2)))
       }
@@ -147,7 +165,8 @@ object ContentRecommender {
     mid2SimilarScoreDF.write
       .format("com.mongodb.spark.sql")
       .option("uri",Constant.MONGO_URI)
-      .option("collection",Constant.MID_2_SIMILAR_SCORE)
+//      .option("collection",Constant.MID_2_SIMILAR_SCORE)
+      .option("collection","mid2SimilarScore2")
       .mode(SaveMode.Append)
       .save()
 
@@ -174,7 +193,8 @@ object ContentRecommender {
     similarMoviesDF.write
         .format("com.mongodb.spark.sql")
         .option("uri",Constant.MONGO_URI)
-        .option("collection",Constant.SIMILAR_MOVIE_RECOMMENDATION_MONGODB)
+//        .option("collection",Constant.SIMILAR_MOVIE_RECOMMENDATION_MONGODB)
+        .option("collection","similarMovieRecommendation2")
         .mode(SaveMode.Append)
         .save()
     

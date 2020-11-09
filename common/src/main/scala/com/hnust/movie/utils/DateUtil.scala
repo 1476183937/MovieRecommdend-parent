@@ -191,8 +191,14 @@ object DateUtil {
 
 //    dateDecrease()
 
-    println(getMondayByDate(new Date()))
-    println(getSundayByDate(new Date()))
+    println(dateStr2TimeMillis("2020-07-04"))
+    println(new Date().getTime)
+
+//    1593868330563
+//    1593868371200
+//    1593868326601
+//    println(getMondayByDate(new Date()))
+//    println(getSundayByDate(new Date()))
 
   }
 

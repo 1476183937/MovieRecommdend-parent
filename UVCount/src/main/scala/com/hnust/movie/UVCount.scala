@@ -2,6 +2,7 @@ package com.hnust.movie
 
 import java.io.FileInputStream
 import java.lang
+import java.text.SimpleDateFormat
 import java.util.{Date, Properties}
 
 import com.hnust.movie.utils.DateUtil
@@ -21,14 +22,14 @@ import org.apache.kafka.clients.consumer.ConsumerConfig
 import redis.clients.jedis.Jedis
 
 
-case class LogEvent(uid: Long, ip: String, event: String, timestamp: Long)
+case class LogEvent(uid: Long, ip: String,mid:Long, event: String, timestamp: Long)
 
 //输出结果样例类:开始时间-结束时间-数量
 case class UVCount(startTime:String, endTime:String, count:Long)
 
 /**
   * @Title:统计每一天当中每小时内的用户访问量
-  * 用户行为日志格式：uid|ip|event|timestamp
+  * 用户行为日志格式：uid|ip|mid|event|timestamp,电影id（mid）是可能为空的
   * event的值有:detail(浏览详情页)、play(进入播放页)、fav(收藏操作)、rating(评分操作)、
   * search(搜索操作)、index(进入首页)、comment(评论操作)、login(登录操作)、
   * @Author: ggh
@@ -42,6 +43,7 @@ object UVCount {
 
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
+    //定义kafka的配置
     val prop = new Properties()
     val path: String = getClass.getResource("/application.properties").getPath
 
@@ -55,22 +57,23 @@ object UVCount {
     prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer")
     prop.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest")
 
-
     val kafkaConsumer: FlinkKafkaConsumer[String] = new FlinkKafkaConsumer[String]("event", new SimpleStringSchema(), prop)
 
     val kafkaStream: DataStream[String] = env.addSource(kafkaConsumer)
 
-    //    用户行为日志格式：uid|ip|event|timestamp
+    //    用户行为日志格式：uid|ip|mid|event|timestamp，电影id是可能为空的
     //    event的值有:detail(浏览详情页)、play(进入播放页)、fav(收藏操作)、rating(评分操作)、search(搜索操作)、index(进入首页)、comment(评论操作)、login(登录操作)、
-
     kafkaStream.print("event data:")
+
+    //定义一个侧输出流
+    val outPutTag = new OutputTag[(String, Long, String, Long)]("late date:")
 
     val resultStream: DataStream[UVCount] = kafkaStream
       .filter(_.split("\\|").length == 4) //过滤掉不符合要求的日志
       .map(line => {
       val strings: Array[String] = line.split("\\|")
 
-      LogEvent(strings(0).toLong, strings(1), strings(2), strings(3).toLong)
+      LogEvent(strings(0).toLong, strings(1),strings(2).toLong, strings(3), strings(4).toLong)
     })
       .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor[LogEvent](Time.minutes(1)) {
         override def extractTimestamp(element: LogEvent) = {
@@ -80,12 +83,16 @@ object UVCount {
       .map(event => ("tmpKey", event.uid, event.ip, event.timestamp))
       .keyBy(_._1)
       .timeWindow(Time.hours(1))
+      .allowedLateness(Time.minutes(1))  //允许数据迟到一分钟
+      .sideOutputLateData(outPutTag)               //将迟到的数据放到侧输出流
       .trigger(new EventTrigger)
       .process(new UVCountWithBloom())
 
+    //接收一下迟到的数据
+    resultStream.getSideOutput(outPutTag).print("迟到的数据：")
+
+    //输出一下实时统计结果
     resultStream.print("result count:")
-
-
 
     env.execute("开始统计uv：")
 
@@ -97,9 +104,15 @@ object UVCount {
 
     override def onProcessingTime(time: Long, window: TimeWindow, ctx: Trigger.TriggerContext): TriggerResult = TriggerResult.CONTINUE
 
-    override def onEventTime(time: Long, window: TimeWindow, ctx: Trigger.TriggerContext): TriggerResult = TriggerResult.CONTINUE
+    override def onEventTime(time: Long, window: TimeWindow, ctx: Trigger.TriggerContext): TriggerResult = {
 
-    override def clear(window: TimeWindow, ctx: Trigger.TriggerContext): Unit = {}
+//      ctx.registerEventTimeTimer(1)
+
+      TriggerResult.CONTINUE
+    }
+
+    override def clear(window: TimeWindow, ctx: Trigger.TriggerContext): Unit = {
+    }
   }
 
 
@@ -140,13 +153,10 @@ object UVCount {
 
       //在窗口要关闭的时候将缓存中的数据写入数据库
 
-
       //关闭资源
       jedis.close()
 
-
     }
-
 
 
     override def process(key: String, context: Context, elements: Iterable[(String, Long, String, Long)], out: Collector[UVCount]): Unit = {
@@ -174,6 +184,18 @@ object UVCount {
 
       val count: lang.Long = jedis.bitcount(storeKey)
 
+      val start: Long = context.window.getStart
+      val end: Long = context.window.getEnd
+
+      val format = new SimpleDateFormat("yyyy-MM-dd-HH")
+      val winStart: String = format.format(new Date(start))
+      val winEnd: String = format.format(new Date(end))
+
+      println("窗口时间为：" +winStart + "到" + winEnd)
+
+      //侧输出流
+//      context.output(new OutputTag[UVCount]("late"),UVCount(startTime,endTime,11))
+
       //如果位图中指定位置为0，说明之前没有记录过，就将其设置为1
       if (!result){
         jedis.setbit(storeKey,offect,true)
@@ -181,6 +203,7 @@ object UVCount {
       }else {
         out.collect(UVCount(startTime,endTime,count))
       }
+
 
     }
 

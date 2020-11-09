@@ -17,7 +17,6 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SaveMode, SparkSession}
   */
 object StatisticsRecommender {
 
-
   def main(args: Array[String]): Unit = {
 
     //创建sparkConf
@@ -103,7 +102,6 @@ object StatisticsRecommender {
     userCollectionDF.createOrReplaceTempView("userCollection")
 
 
-
     movieInfoDF = movieInfoDF.filter(info => info.getAs("categories")!=null)
 
     //    从电影详情表获取：(mid, movie_name,categories,release_date)
@@ -155,11 +153,11 @@ object StatisticsRecommender {
 
 //    movieWithHotdegree.toDF().show()
 
+    //TODO:统计每个类别中热度值前十的电影数据
     //进行列转行,将类别炸裂开来
     val mid2Category: DataFrame = spark.sql("select mid,movie_name,hot_degree,category from movieAggrInfo lateral view explode(split(categories,',')) tmp as category")
 
-
-    //将电影详情数据转换从map形式，以便后面使用
+    //将电影详情数据转换成map形式，以便后面使用
     val movieInfoMap: collection.Map[Long, Row] = movieInfoDF.rdd.map(info => {
       (info.getAs[Long]("mid"), info)
     }).collectAsMap()
@@ -249,8 +247,6 @@ object StatisticsRecommender {
       .format("com.mongodb.spark.sql")
       .save()
 
-
-
     //TODO:热播榜multipleRanking
     val multipleRankingList: Array[(Long, String, String, Double,String)] = movieWithHotdegree.sortBy(_._4,false).take(10)
     //转换成Movie_MongoDB
@@ -295,7 +291,7 @@ object StatisticsRecommender {
         .format("com.mongodb.spark.sql")
         .save()
 
-    //TODO:好评榜,直接中原始的电影数据中取，按评分和发布日期排序
+    //TODO:好评榜,直接从原始的电影数据中取，按评分和发布日期排序
     val goodRankingArray: Array[Movie_MongoDB] = movieInfoDF.rdd
                                                   .sortBy(_.getAs[String]("release_date"),false)
                                                   .sortBy(_.getAs[Double]("rating_num"),false)
@@ -358,7 +354,7 @@ object StatisticsRecommender {
     val mondayDate: String = DateUtil.getMondayByDate(new Date())
     val sundayDate: String = DateUtil.getSundayByDate(new Date())
 
-    sql = "SELECT m.mid, m.movie_name, 0.0 hot_degree, m.img_urls, m.rating_num, m.categories FROM movieInfoDF m JOIN (SELECT  mid, count(*) count FROM movieRating where date>'"+mondayDate+"' AND date<'"+sundayDate+" 24:59:59' group by mid ORDER BY count DESC) t1 ON m.mid=t1.mid"
+    sql = "SELECT m.mid, m.movie_name, 0.0 hot_degree, m.img_urls, m.rating_num, m.categories FROM movieInfoDF m JOIN (SELECT  mid, count(*) count FROM movieRating where date>'"+mondayDate+"' AND date<'"+sundayDate+" 23:59:59' group by mid ORDER BY count DESC) t1 ON m.mid=t1.mid"
 
     val weekRankingArray: Array[Movie_MongoDB] = spark.sql(sql)
       .toDF("mid", "movie_name", "hot_degree", "img_urls", "rating_num", "categories").rdd.take(10).map(info => {
@@ -413,7 +409,7 @@ object StatisticsRecommender {
 
   }
 
-  //计算电影二等热度值
+  //计算电影的热度值
   /** aaa 80 2000 300 1500 15
     *
     * @title: Score = (P-1) *0.5+C*0.1+L*0.2+B*0.2/ (T+2)^G,  G的默认值为1.8

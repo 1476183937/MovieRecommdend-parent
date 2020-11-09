@@ -22,9 +22,6 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.json4s.jackson.Serialization
 import redis.clients.jedis.Jedis
-//import org.json4s._
-//import org.json4s.jackson.JsonMethods._
-//import org.json4s.jackson.Serialization
 
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -107,12 +104,13 @@ object RealTimeRecommend {
 
         val jedis: Jedis = new Jedis("localhost")
 
-        //创建一个map，封装一个电影和另外其他电影的的相似度
-        var mid2ScoreMap = new mutable.HashMap[Long, Double]()
 
         ratings.foreach {
           rating => {
             println("接收到数据:" + rating)
+
+            //创建一个map，封装一个电影和另外其他电影的的相似度
+            var mid2ScoreMap = new mutable.HashMap[Long, Double]()
 
             //1.从mongo获取该电影的电影相似度列表
             val bObject = MongoDBObject("mid" -> rating._2)
@@ -194,9 +192,9 @@ object RealTimeRecommend {
 
     val date: String = DateUtil.getCurrentTime("yyyy-MM-dd")
 
-    movieLevelArray.foreach(println(_))
+//    movieLevelArray.foreach(println(_))
 
-    getInfoFromCache(1765009, jedis, connection)
+//    getInfoFromCache(1765009, jedis, connection)
 
     //从缓存中获取每个电影的详情数据，并封装成MovieResc
     val movieRescs: Array[MovieResc] = movieLevelArray.map {
@@ -209,7 +207,8 @@ object RealTimeRecommend {
 
     //保存到mongodb
     userRescCollection.insert(MongoDBObject("date" -> date, "uid" -> uid,
-      "userResc" -> movieRescs.map(x => MongoDBObject("mid"->x.mid,"movie_name"->x.movie_name,"hot_degree"->x.hot_degree,"img_url"->x.imgUrl,"rating_num"->x.ratingNum,"categories"->x.categories,"score"->0.0))))
+      "userResc" -> movieRescs.map(x => MongoDBObject("mid"->x.mid,"movieName"->x.movieName,"hotDegree"->x.hotDegree,"imgUrls"->x.imgUrls,"ratingNum"->x.ratingNum,"categories"->x.categories,"score"->0.0))))
+//      "userResc" -> movieRescs.map(x => MongoDBObject("mid"->x.mid,"movieName"->x.movieName,"hotDegree"->x.hotDegree,"imgUrls"->x.imgUrls,"ratingNum"->x.ratingNum,"categories"->x.categories))))
 
     println("保存完毕")
 
@@ -226,7 +225,7 @@ object RealTimeRecommend {
     **/
   def getInfoFromCache(mid: Long, jedis: Jedis, connection: Connection): MovieResc = {
 
-    println("进入缓存方法")
+//    println("进入缓存方法")
 
     var movieInfoStr: String = ""
 

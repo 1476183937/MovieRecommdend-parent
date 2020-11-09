@@ -15,6 +15,10 @@
         <module>RealTimeRecommend</module>
         <module>LoginFailDetect</module>
         <module>UVCount</module>
+        <module>RealTimeHotMovie</module>
+        <module>SessionAnalyse</module>
+        <module>PageAnalyse</module>
+        <module>TopMoviesOfArea</module>
     </modules>
 
     <properties>

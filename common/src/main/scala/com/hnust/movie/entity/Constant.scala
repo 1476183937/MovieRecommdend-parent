@@ -68,4 +68,21 @@ object Constant {
   //在mongoDB中存放电影相似度矩阵的collection的名称
   val MID_2_SIMILAR_SCORE = "mid2SimilarScore"
 
+  //在mongodb中存放session统计结果的collection名称
+  val SESSION_ANALYSE_MONGODB = "sessionAnalyse"
+  val SESSION_TOP10_CATEGORIES = "sessionTop10Categories"
+
+  //在mongodb中存放session统计中各类别的活跃session
+  val SESSION_TOP_SESSION_OF_CATEGORY_MONGODB = "topSessionOfCategory"
+
+  //在mongodb中存放top10类别中的活跃session的详情数据
+  val SESSION_TOP_SESSION_DETAIL_OF_CATEGORY_MONGODB = "topSessionDetailOfCategory"
+
+  //在mongodb中存放页面转化率的collection名称
+  val PAGE_CONVERT_RATE_MONGODB = "pageConvertRate"
+
+
+  //在mongodb中存放各个区域top电影信息的collection名称
+  val TOP_MOVIES_OF_AREA = "TopMoviesOfArea"
+
 }
